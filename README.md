@@ -44,6 +44,10 @@
 
 也可以在 Android Studio 中打开项目根目录。Gradle 工程文件已提供；Android Studio 首次同步工程时可能需要下载 Gradle 和 Android Gradle Plugin 项目依赖。
 
+全新检出、尚无 `signing/debug.keystore` 时，Android Studio/Gradle 使用当前开发环境的默认调试密钥，缺失时由 Android Gradle Plugin 自动创建（通常位于 `~/.android/debug.keystore`）。如果项目中已有 `signing/debug.keystore`，Gradle 会优先复用它，与 PowerShell 脚本保持一致。
+
+**升级安装必须沿用首次安装的签名密钥。** 两条构建路径首次生成的密钥可能不同，使用不同密钥的 APK 无法相互覆盖安装。首次通过脚本安装的，请保留并备份 `signing/debug.keystore`，之后脚本和 Gradle 都会使用它。首次通过 Android Studio/Gradle 安装的，请备份并继续使用当时的默认调试密钥；如需改用脚本，应先把这把密钥复制为项目的 `signing/debug.keystore`，不要覆盖已有的不同密钥。签名密钥不应提交到仓库。
+
 ## 网页试用
 
 电脑上安装的 Node.js 即可运行本地试用页。在项目目录运行：
