@@ -166,8 +166,8 @@ function debtText(trip, map) {
   const items = [...map].sort(([a], [b]) => a.localeCompare(b))
     .filter(([, amount]) => amount !== 0n).map(([code, amount]) =>
       amount > 0n
-        ? escapeHtml(trip.personB) + ' 应还 ' + escapeHtml(trip.personA) + ' ' + formatAmount(amount, code)
-        : escapeHtml(trip.personA) + ' 应还 ' + escapeHtml(trip.personB) + ' ' + formatAmount(-amount, code));
+        ? escapeHtml(trip.personB) + ' 应还 ' + escapeHtml(trip.personA) + ' ' + escapeHtml(formatAmount(amount, code))
+        : escapeHtml(trip.personA) + ' 应还 ' + escapeHtml(trip.personB) + ' ' + escapeHtml(formatAmount(-amount, code)));
   return items.length ? items.join('<br>') : '目前已结清';
 }
 function eventLabel(trip, event) {
