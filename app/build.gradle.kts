@@ -30,7 +30,10 @@ android {
 
     buildTypes {
         getByName("debug") {
-            signingConfig = signingConfigs.getByName("testing")
+            // Reuse the script's key when present; otherwise let AGP create its default debug key.
+            if (rootProject.file("signing/debug.keystore").isFile) {
+                signingConfig = signingConfigs.getByName("testing")
+            }
         }
     }
 
