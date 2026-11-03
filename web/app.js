@@ -401,6 +401,7 @@ async function syncNow() {
   } catch (error) { setBadge('同步未完成 · 待重试', true); }
   finally { syncing = false; }
 }
+
 document.getElementById('main').addEventListener('click', event => {
   const historyOption = event.target.closest('[data-currency-history]');
   if (historyOption) {
