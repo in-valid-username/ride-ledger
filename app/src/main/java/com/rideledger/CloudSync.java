@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.IntConsumer;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -96,16 +97,24 @@ final class CloudSync {
         if (!running || endpoint().isEmpty() || busy) return;
         busy = true;
         worker.execute(() -> {
-            int total = 0;
+            int[] total = {0};
             try {
-                for (LedgerStore.Trip trip : store.trips()) total += syncTrip(trip);
-                publish("云同步完成，新增 " + total + " 笔", total);
-            } catch (Exception e) { publish("云同步待重试：" + e.getMessage(), 0); }
+                Exception failure = null;
+                for (LedgerStore.Trip trip : store.trips()) {
+                    try { syncTrip(trip, added -> total[0] += added); }
+                    catch (Exception e) { if (failure == null) failure = e; }
+                }
+                // Finish the other trips before reporting the first failure.
+                if (failure != null) throw failure;
+                publish("云同步完成，新增 " + total[0] + " 笔", total[0]);
+            } catch (Exception e) {
+                publish("云同步待重试：" + e.getMessage() + "，已新增 " + total[0] + " 笔", total[0]);
+            }
             finally { busy = false; }
         });
     }
 
-    private int syncTrip(LedgerStore.Trip trip) throws Exception {
+    private void syncTrip(LedgerStore.Trip trip, IntConsumer onMerged) throws Exception {
         JSONObject body = new JSONObject().put("tripId", trip.id).put("deviceId", deviceId)
                 .put("bundle", SyncCodec.bundle(store, trip));
         byte[] input = body.toString().getBytes(StandardCharsets.UTF_8);
@@ -131,10 +140,9 @@ final class CloudSync {
                 response = buffer.toByteArray();
             }
             JSONArray snapshots = new JSONObject(new String(response, StandardCharsets.UTF_8)).getJSONArray("snapshots");
-            int total = 0;
+            // Each merge is committed even if a later snapshot cannot be decrypted.
             for (int i = 0; i < snapshots.length(); i++)
-                total += SyncCodec.mergeBundle(store, snapshots.getJSONObject(i));
-            return total;
+                onMerged.accept(SyncCodec.mergeBundle(store, snapshots.getJSONObject(i)));
         } finally { conn.disconnect(); }
     }
 
