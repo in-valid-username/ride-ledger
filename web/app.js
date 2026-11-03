@@ -29,7 +29,7 @@ if (migratedCurrency) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 let syncing = false;
 let toastTimer;
 
-function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function save(nextState = state) { localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState)); }
 function activeTrip() { return state.trips.find(trip => trip.id === state.activeTripId); }
 function eventsFor(id) { return state.events.filter(event => event.tripId === id); }
 function escapeHtml(value) {
@@ -37,7 +37,11 @@ function escapeHtml(value) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 }
 function base64url(bytes) {
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 function fromBase64url(value) {
   const clean = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -359,37 +363,44 @@ async function syncNow() {
   syncing = true;
   setBadge('正在同步');
   let added = 0;
+  let failed = false;
   try {
     for (const trip of state.trips) {
-      const response = await fetch('/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Trip-Token': await tripToken(trip) },
-        body: JSON.stringify({
-          tripId: trip.id, deviceId: state.deviceId, bundle: await encryptedBundle(trip)
-        })
-      });
-      if (!response.ok) throw new Error('服务返回 ' + response.status);
-      const { snapshots } = await response.json();
-      const known = new Set(state.events.map(event => event.id));
-      for (const bundle of snapshots) {
-        for (const event of await decryptBundle(trip, bundle)) {
-          if (event.tripId !== trip.id || !event.id || known.has(event.id)) continue;
-          normalizeEventCurrency(event);
-          state.events.push(event);
-          known.add(event.id);
-          added++;
+      try {
+        const response = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Trip-Token': await tripToken(trip) },
+          body: JSON.stringify({
+            tripId: trip.id, deviceId: state.deviceId, bundle: await encryptedBundle(trip)
+          })
+        });
+        if (!response.ok) throw new Error('服务返回 ' + response.status);
+        const { snapshots } = await response.json();
+        for (const bundle of snapshots) {
+          const incoming = await decryptBundle(trip, bundle);
+          const known = new Set(state.events.map(event => event.id));
+          const fresh = [];
+          for (const event of incoming) {
+            if (event.tripId !== trip.id || !event.id || known.has(event.id)) continue;
+            normalizeEventCurrency(event);
+            fresh.push(event);
+            known.add(event.id);
+          }
+          if (!fresh.length) continue;
+          const nextState = { ...state, events: state.events.concat(fresh) };
+          // Publish imports only after saving, so failed writes can be retried.
+          save(nextState);
+          state = nextState;
+          added += fresh.length;
+          if (currentView !== 'quick') render();
         }
-      }
+      } catch (error) { failed = true; }
     }
-    if (added) {
-      save();
-      if (currentView !== 'quick') render();
-    }
-    setBadge(added ? '已同步 · 新增 ' + added + ' 笔' : '已同步');
-  } catch (error) { setBadge('离线保存 · 待同步', true); }
+    if (failed) setBadge('同步未完成 · 待重试', true);
+    else setBadge(added ? '已同步 · 新增 ' + added + ' 笔' : '已同步');
+  } catch (error) { setBadge('同步未完成 · 待重试', true); }
   finally { syncing = false; }
 }
-
 document.getElementById('main').addEventListener('click', event => {
   const historyOption = event.target.closest('[data-currency-history]');
   if (historyOption) {
